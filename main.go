@@ -7,65 +7,63 @@ import (
 	"net"
 )
 
-type node struct {
+// server
+type server struct {
 	Name string
 	Addr string
-
-	Clients map[string]HelloServiceClient
 }
 
-// Server side service implementation
-func (n *node) SayHello(ctx context.Context, in *HelloRequest) (*HelloReply, error) {
-	return &HelloReply{Message: "Hello From" + n.Name}, nil
+// service
+func (s *server) SayHello(ctx context.Context, request *HelloRequest) (*HelloReply, error) {
+	return &HelloReply{Message: "Hello From " + s.Name}, nil
 }
 
-// start server
-func (n *node) StartServer() {
-	lis, err := net.Listen("tcp", n.Addr)
+func (s *server) Start() {
+	// listen to address
+	lis, err := net.Listen("tcp", s.Addr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	_n := grpc.NewServer()
-	RegisterHelloServiceServer(_n, n)
-
-	if err := _n.Serve(lis); err != nil {
-		log.Fatalf("failed to serve %v", err)
+	// register new server
+	_s := grpc.NewServer()
+	RegisterHelloServiceServer(_s, s)
+	if err := _s.Serve(lis); err != nil {
+		log.Fatalf("Failed to serve %v", err)
 	}
-
 }
 
-func (n *node) Start() {
-	n.Clients = make(map[string]HelloServiceClient)
-	go n.StartServer()
-}
+func (s *server) SendRequest(other server) {
 
-func (n *node) SendRequest(name string, addr string) {
-	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	log.Printf("Current Server: %s", s.Name)
+
+	log.Printf("Request to: %s", other.Name)
+	conn, err := grpc.Dial(other.Addr, grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("did not connect: %w", err)
+		log.Fatalf("Did not connect %v", err)
 	}
-
 	defer conn.Close()
 
-	n.Clients[name] = NewHelloServiceClient(conn)
-
-	req := HelloRequest{Name: n.Name}
-	r, err := n.Clients[name].SayHello(context.Background(), &req)
+	client := NewHelloServiceClient(conn)
+	req := HelloRequest{Name: s.Name}
+	r, err := client.SayHello(context.Background(), &req)
 	if err != nil {
-		log.Fatalf("could not greet %v", err)
+		log.Fatalf("Service failed %v", err)
 	}
-
-	log.Printf("Reply from server %s", r.Message)
+	log.Printf("Reply: %s", r.Message)
 }
 
 func main() {
 
-	node1 := node{Name: "Node One", Addr: "localhost:60001", Clients: nil}
-	node2 := node{Name: "Node Two", Addr: "localhost:60002", Clients: nil}
+	server1 := server{Name: "NodeOne", Addr: "localhost:60001"}
+	server2 := server{Name: "NodeTwo", Addr: "localhost:60002"}
+	server3 := server{Name: "NodeThree", Addr: "localhost:60003"}
 
-	node1.Start()
-	node2.Start()
+	go server1.Start()
+	go server2.Start()
+	go server3.Start()
 
-	node1.SendRequest("Node Two", "localhost:60002")
+	server1.SendRequest(server2)
+	server1.SendRequest(server3)
+	server3.SendRequest(server2)
 }
